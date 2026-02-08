@@ -373,13 +373,13 @@ def cleanup_orphaned_files(input_dir, move_to_folder="orphaned_files"):
 # Usage with example
 if __name__ == "__main__":
     # Configuration
-    INPUT_DIR = "/home/saib/ml_project/data/training_yolo_dataset"  # Your folder with images/ and labels/
-    OUTPUT_DIR = "yolo_dataset_split"  # Output folder
+    INPUT_DIR = "/home/saib/ml_project/data/yolo_training_second_dataset"  # Your folder with images/ and labels/
+    OUTPUT_DIR = "/home/saib/ml_project/notebooks/yolo_second_dataset_split"  # Output folder
     
     # Split ratios
     # For train/test only: (0.8, 0.2)
     # For train/val/test: (0.7, 0.15, 0.15)
-    SPLIT_RATIO = (0.8, 0.2)  # 80% train, 20% test
+    SPLIT_RATIO = (0.7, 0.3)  # 80% train, 20% test
     
     # Optional: Clean up orphaned files first
     # cleanup_orphaned_files(INPUT_DIR)
