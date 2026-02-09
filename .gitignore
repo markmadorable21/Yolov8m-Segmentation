@@ -17,6 +17,11 @@
 *.tif
 *.TIFF
 *.TIF
+*.Identifier
+*.mp4
+*.mp3
+*.m4a
+
 
 # Web and vector formats
 *.webp
