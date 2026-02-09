@@ -203,8 +203,8 @@ class BatchEggplantTester:
 def main():
     # Configuration
     MODEL_PATH = "/home/saib/ml_project/notebooks/yolo_dataset_split/yolov8m-seg-custom.pt"  # Your trained model
-    TEST_FOLDER = "/home/saib/ml_project/data/testing_yolo_dataset"  # Folder containing test images
-    OUTPUT_FOLDER = "/home/saib/ml_project/data/batch-testing-output"  # Optional: specify output folder
+    TEST_FOLDER = "/home/saib/ml_project/data/auto annotation/input"  # Folder containing test images
+    OUTPUT_FOLDER = "/home/saib/ml_project/data/auto annotation/output"  # Optional: specify output folder
     CONFIDENCE_THRESHOLD = 0.5  # Adjust as needed
     
     # Create tester

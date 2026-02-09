@@ -12,8 +12,8 @@ import cv2
 import sys
 
 # =============== HARDCODED CONFIGURATION ===============
-INPUT_FOLDER = "farm_images"           # Your folder with raw images
-OUTPUT_FOLDER = "auto_annotated"       # Where annotations will be saved
+INPUT_FOLDER = "/home/saib/ml_project/data/auto annotation/testing dataset"           # Your folder with raw images
+OUTPUT_FOLDER = "/home/saib/ml_project/data/auto annotation/output"       # Where annotations will be saved
 CONFIDENCE_THRESHOLD = 0.4            # Lower = more detections, Higher = more accurate
 USE_MODEL = "yolov8"                  # "yolov8" or "grounding_dino"
 YOLO_MODEL_SIZE = "n"                 # n, s, m, l, x
