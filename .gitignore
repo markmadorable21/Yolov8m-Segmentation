@@ -1,0 +1,157 @@
+# ====================================
+# IMAGE FILES - ALL TYPES
+# ====================================
+
+# Standard image formats
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.png
+*.PNG
+*.gif
+*.GIF
+*.bmp
+*.BMP
+*.tiff
+*.tif
+*.TIFF
+*.TIF
+
+# Web and vector formats
+*.webp
+*.WEBP
+*.svg
+*.SVG
+*.ico
+*.ICO
+*.heic
+*.HEIC
+*.heif
+*.HEIF
+*.avif
+*.AVIF
+
+# Raw camera formats
+*.raw
+*.RAW
+*.cr2
+*.CR2
+*.nef
+*.NEF
+*.arw
+*.ARW
+*.dng
+*.DNG
+*.orf
+*.ORF
+*.sr2
+*.SR2
+*.pef
+*.PEF
+*.rw2
+*.RW2
+*.zip
+*.tar
+
+# Photoshop and other editor formats
+*.psd
+*.PSD
+*.xcf
+*.XCF
+*.kra
+*.KRA
+*.clip
+*.CLIP
+*.cpt
+*.CPT
+
+# ====================================
+# FOLDERS TO IGNORE
+# ====================================
+
+# Dataset and image folders
+dataset/
+datasets/
+
+# ML/DL specific
+data/
+
+# Output folders
+output/
+results/
+exports/
+generated/
+
+# Cache and temp folders
+.cache/
+tmp/
+temp/
+
+# ====================================
+# SYSTEM FILES
+# ====================================
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+*.swp
+*~
+*.lock
+
+# ====================================
+# PYTHON SPECIFIC
+# ====================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# ====================================
+# MACHINE LEARNING SPECIFIC
+# ====================================
+
+# Model files
+*.pth
+*.pt
+*.h5
+*.hdf5
+*.ckpt
+*.pkl
+*.joblib
+
+# TensorBoard
+logs/
+runs/
+
+# ====================================
+# YOUR PROJECT SPECIFIC FOLDERS
+# ====================================
+
+# Add your project folders here
+# /data/
+# /models/
+# /outputs/
