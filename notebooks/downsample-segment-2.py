@@ -8,6 +8,7 @@ Integrated Downsampling and Batch Testing Pipeline
    - annotated_images (with bounding boxes)
    - yolo_labels (YOLOv8 compatible labels)
    - segmented_eggplants (isolated eggplants, no background)
+5. Clean up empty annotation files and their corresponding images
 """
 
 import os
@@ -293,12 +294,111 @@ class ImageDownsampler:
             print(f"  Final total: {stats['total_final_mb']:.2f} MB")
             print(f"  Total savings: {total_savings:.2f} MB ({savings_percent:.1f}%)")
 
+
 class EggplantSegmenter:
     def __init__(self, model_path):
         """Initialize YOLO model for segmentation."""
         print(f"\nLoading YOLO model: {model_path}")
         self.model = YOLO(model_path)
         print("✅ Model loaded successfully!")
+    
+    def cleanup_empty_annotations(self, labels_dir, images_dir):
+        """
+        Clean up empty annotation files and their corresponding images.
+        
+        Args:
+            labels_dir: Directory containing YOLO label files (.txt)
+            images_dir: Directory containing corresponding images
+            
+        Returns:
+            tuple: (deleted_labels_count, deleted_images_count)
+        """
+        print(f"\n{'='*70}")
+        print("CLEANING UP EMPTY ANNOTATIONS")
+        print(f"{'='*70}")
+        
+        labels_path = Path(labels_dir)
+        images_path = Path(images_dir)
+        
+        # Get all text files in labels directory
+        txt_files = list(labels_path.glob("*.txt"))
+        
+        if not txt_files:
+            print("No label files found to check.")
+            return 0, 0
+        
+        print(f"Found {len(txt_files)} label files to check.")
+        
+        deleted_labels = 0
+        deleted_images = 0
+        
+        for txt_file in txt_files:
+            try:
+                # Check if file is empty (0 bytes)
+                if os.path.getsize(txt_file) == 0:
+                    # Get corresponding image filename (same name, different extension)
+                    base_name = txt_file.stem
+                    
+                    # Look for corresponding image in images directory
+                    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp',
+                                       '.JPG', '.JPEG', '.PNG', '.BMP', '.TIF', '.TIFF', '.WEBP']
+                    
+                    matching_images = []
+                    for ext in image_extensions:
+                        potential_image = images_path / f"{base_name}{ext}"
+                        if potential_image.exists():
+                            matching_images.append(potential_image)
+                    
+                    # Delete the empty label file
+                    txt_file.unlink()
+                    deleted_labels += 1
+                    print(f"  Deleted empty label: {txt_file.name}")
+                    
+                    # Delete all matching images
+                    for img_file in matching_images:
+                        img_file.unlink()
+                        deleted_images += 1
+                        print(f"  Deleted corresponding image: {img_file.name}")
+                        
+                else:
+                    # Check if file contains only whitespace or empty lines
+                    with open(txt_file, 'r') as f:
+                        content = f.read().strip()
+                    
+                    if not content:
+                        # File is essentially empty (only whitespace)
+                        base_name = txt_file.stem
+                        
+                        # Look for corresponding images
+                        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp',
+                                           '.JPG', '.JPEG', '.PNG', '.BMP', '.TIF', '.TIFF', '.WEBP']
+                        
+                        matching_images = []
+                        for ext in image_extensions:
+                            potential_image = images_path / f"{base_name}{ext}"
+                            if potential_image.exists():
+                                matching_images.append(potential_image)
+                        
+                        # Delete the essentially empty label file
+                        txt_file.unlink()
+                        deleted_labels += 1
+                        print(f"  Deleted whitespace-only label: {txt_file.name}")
+                        
+                        # Delete all matching images
+                        for img_file in matching_images:
+                            img_file.unlink()
+                            deleted_images += 1
+                            print(f"  Deleted corresponding image: {img_file.name}")
+                            
+            except Exception as e:
+                print(f"  Error processing {txt_file.name}: {e}")
+                continue
+        
+        print(f"\nCleanup summary:")
+        print(f"  Deleted {deleted_labels} empty label files")
+        print(f"  Deleted {deleted_images} corresponding images")
+        
+        return deleted_labels, deleted_images
     
     def create_mask_from_data(self, mask_data, image_shape):
         """
@@ -379,7 +479,7 @@ class EggplantSegmenter:
         
         return result
     
-    def process_images(self, input_folder, output_folder, conf_threshold=0.5):
+    def process_images(self, input_folder, output_folder, conf_threshold=0.5, cleanup=True):
         """
         Process all images in folder for segmentation.
         
@@ -387,6 +487,7 @@ class EggplantSegmenter:
             input_folder: Folder with downsampled images
             output_folder: Where to save results
             conf_threshold: Confidence threshold
+            cleanup: Whether to clean up empty annotations (default: True)
             
         Returns:
             Dictionary with processing results
@@ -415,6 +516,7 @@ class EggplantSegmenter:
         print(f"Input: {input_folder}")
         print(f"Output: {output_folder}")
         print(f"Confidence threshold: {conf_threshold}")
+        print(f"Cleanup empty annotations: {cleanup}")
         print(f"\nOutput structure:")
         print(f"  {annotated_dir}/")
         print(f"  {labels_dir}/")
@@ -530,9 +632,23 @@ class EggplantSegmenter:
                 traceback.print_exc()
                 continue
         
+        # Clean up empty annotations if requested
+        if cleanup:
+            deleted_labels, deleted_images = self.cleanup_empty_annotations(labels_dir, annotated_dir)
+            
+            # Update results to remove deleted files
+            if deleted_labels > 0:
+                # Filter out results for deleted files
+                remaining_results = []
+                for result in results:
+                    img_path = Path(result['image_path'])
+                    if img_path.exists():
+                        remaining_results.append(result)
+                results = remaining_results
+        
         # Generate summary
         self.generate_segmentation_summary(results, output_path, total_detections, 
-                                         total_segmented, total_time)
+                                         total_segmented, total_time, cleanup)
         
         return results
 
@@ -668,7 +784,7 @@ class EggplantSegmenter:
         return eggplants_saved
     
     def generate_segmentation_summary(self, results, output_path, total_detections, 
-                                    total_segmented, total_time):
+                                    total_segmented, total_time, cleanup_done=True):
         """Generate segmentation summary report."""
         if not results:
             print("No results to summarize!")
@@ -688,6 +804,11 @@ class EggplantSegmenter:
         for res in results:
             all_confidences.extend(res['confidences'])
         
+        # Count actual files after cleanup
+        annotated_dir = output_path / "annotated_images"
+        labels_dir = output_path / "yolo_labels"
+        segmented_dir = output_path / "segmented_eggplants"
+        
         # Create summary
         summary = {
             'timestamp': datetime.now().isoformat(),
@@ -701,6 +822,7 @@ class EggplantSegmenter:
             'total_processing_time_seconds': round(total_time, 2),
             'average_time_per_image': round(avg_time, 2),
             'images_per_second': round(num_images / total_time, 2) if total_time > 0 else 0,
+            'cleanup_performed': cleanup_done,
             'confidence_statistics': {
                 'min': round(min(all_confidences), 3) if all_confidences else 0,
                 'max': round(max(all_confidences), 3) if all_confidences else 0,
@@ -709,9 +831,9 @@ class EggplantSegmenter:
             },
             'images_with_no_detections': len([r for r in results if r['detections'] == 0]),
             'output_files': {
-                'annotated_images': len(list((output_path / "annotated_images").glob("*"))),
-                'yolo_labels': len(list((output_path / "yolo_labels").glob("*.txt"))),
-                'segmented_eggplants': len(list((output_path / "segmented_eggplants").glob("*.png")))
+                'annotated_images': len(list(annotated_dir.glob("*"))) if annotated_dir.exists() else 0,
+                'yolo_labels': len(list(labels_dir.glob("*.txt"))) if labels_dir.exists() else 0,
+                'segmented_eggplants': len(list(segmented_dir.glob("*.png"))) if segmented_dir.exists() else 0
             }
         }
         
@@ -735,6 +857,7 @@ class EggplantSegmenter:
         print(f"Average time: {summary['average_time_per_image']:.2f}s")
         print(f"Speed: {summary['images_per_second']:.1f} images/second")
         print(f"Images with no detections: {summary['images_with_no_detections']}")
+        print(f"Cleanup performed: {summary['cleanup_performed']}")
         
         print(f"\n📁 Output files:")
         print(f"  annotated_images/: {summary['output_files']['annotated_images']} images")
@@ -797,7 +920,8 @@ class IntegratedPipeline:
         results = segmenter.process_images(
             input_folder=downsampled_folder,
             output_folder=config['final_output_folder'],
-            conf_threshold=config['confidence_threshold']
+            conf_threshold=config['confidence_threshold'],
+            cleanup=config.get('cleanup_empty_annotations', True)  # Default to True
         )
         
         print(f"\n{'='*70}")
@@ -822,7 +946,8 @@ def main():
         'max_size_mb': 1.0,
         'max_dimension': 1600,
         'quality': 85,
-        'confidence_threshold': 0.5
+        'confidence_threshold': 0.5,
+        'cleanup_empty_annotations': True  # Add this option
     }
     # ========================================
     
