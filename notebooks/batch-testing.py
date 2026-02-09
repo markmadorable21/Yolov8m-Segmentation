@@ -1,221 +1,397 @@
-from ultralytics import YOLO
+#!/usr/bin/env python3
+"""
+Check and resize images to ensure none exceed 1MB
+"""
+
+import os
 import cv2
 import numpy as np
 from pathlib import Path
-import json
-import time
+import shutil
 from datetime import datetime
 
-class BatchEggplantTester:
-    def __init__(self, model_path='yolov8m-seg-custom.pt'):
-        """Initialize with trained model."""
-        print(f"Loading model: {model_path}")
-        self.model = YOLO(model_path)
-        print("Model loaded successfully!")
-        
-    def test_folder(self, input_folder, output_folder, conf_threshold):
+class ImageSizeOptimizer:
+    def __init__(self, input_folder, output_folder=None, max_size_mb=1.0, max_dimension=1600, quality=85):
         """
-        Test all images in a folder.
+        Initialize image optimizer.
         
         Args:
-            input_folder: Folder containing test images
-            output_folder: Where to save results (default: batch_results_<timestamp>)
-            conf_threshold: Confidence threshold for detections
+            input_folder: Folder with images to check
+            output_folder: Where to save optimized images (creates subfolders)
+            max_size_mb: Maximum file size in MB (default: 1.0MB)
+            max_dimension: Maximum width or height in pixels (default: 1600)
+            quality: JPEG quality for resized images (1-100, default: 85)
         """
-        # Setup paths
-        input_path = Path(input_folder)
+        self.input_folder = Path(input_folder)
+        self.max_size_mb = max_size_mb
+        self.max_dimension = max_dimension
+        self.quality = quality
         
+        # Setup output folder structure
         if output_folder is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_folder = f"batch_results_{timestamp}"
+            self.output_folder = self.input_folder.parent / f"{self.input_folder.name}_optimized_{timestamp}"
+        else:
+            self.output_folder = Path(output_folder)
         
-        output_path = Path(output_folder)
-        output_path.mkdir(parents=True, exist_ok=True)
+        # Create output subdirectories
+        self.dirs = {
+            'ok': self.output_folder / 'ok',           # Already under 1MB
+            'resized': self.output_folder / 'resized', # Successfully resized
+            'failed': self.output_folder / 'failed',   # Failed to process
+            'skipped': self.output_folder / 'skipped', # Non-image files
+            'exceeds_limit': self.output_folder / 'exceeds_limit' # Still >1MB after resize
+        }
         
-        # Find all images
-        image_files = self._find_images(input_path)
+        for dir_path in self.dirs.values():
+            dir_path.mkdir(parents=True, exist_ok=True)
         
-        if not image_files:
-            print(f"No images found in {input_folder}")
-            return
-        
-        print(f"\nFound {len(image_files)} images to process")
-        print(f"Output will be saved to: {output_path}")
-        
-        # Batch processing
-        results = []
-        total_detections = 0
-        total_inference_time = 0
-        
-        for idx, img_file in enumerate(image_files):
-            print(f"\n[{idx+1}/{len(image_files)}] Processing: {img_file.name}")
-            
-            # Run inference
-            start_time = time.time()
-            inference_results = self.model(
-                str(img_file),
-                conf=conf_threshold,
-                save=True,
-                save_txt=True,
-                save_conf=True,
-                project=str(output_path),
-                name="predictions"
-            )
-            inference_time = time.time() - start_time
-            total_inference_time += inference_time
-            
-            # Process results
-            for result in inference_results:
-                num_detections = len(result.boxes) if result.boxes else 0
-                total_detections += num_detections
-                
-                # Save individual stats
-                img_result = {
-                    'filename': img_file.name,
-                    'detections': num_detections,
-                    'inference_time': inference_time,
-                    'confidences': [],
-                    'bboxes': [],
-                    'mask_areas': []
-                }
-                
-                # Extract confidence scores
-                if result.boxes is not None:
-                    for box in result.boxes:
-                        img_result['confidences'].append(float(box.conf[0].item()))
-                        img_result['bboxes'].append(box.xyxy[0].tolist())
-                
-                # Extract mask areas
-                if result.masks is not None:
-                    for mask in result.masks.data:
-                        mask_np = (mask.cpu().numpy() * 255).astype(np.uint8)
-                        area = np.sum(mask_np > 0)
-                        img_result['mask_areas'].append(int(area))
-                
-                results.append(img_result)
-                
-                print(f"  Detections: {num_detections}")
-                print(f"  Time: {inference_time:.2f}s")
-                if num_detections > 0:
-                    avg_conf = np.mean(img_result['confidences']) if img_result['confidences'] else 0
-                    print(f"  Avg confidence: {avg_conf:.3f}")
-        
-        # Generate summary
-        self._generate_summary(results, output_path, total_detections, total_inference_time)
-        
-        return results
+        print("="*70)
+        print("IMAGE SIZE OPTIMIZER")
+        print("="*70)
+        print(f"Input: {self.input_folder}")
+        print(f"Output: {self.output_folder}")
+        print(f"Max file size: {max_size_mb} MB")
+        print(f"Max dimension: {max_dimension} px")
+        print(f"JPEG quality: {quality}")
+        print("="*70)
     
-    def _find_images(self, folder_path):
-        """Find all image files in folder."""
-        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp']
+    def get_all_images(self):
+        """Get all image files from input folder."""
+        extensions = [
+            '.jpg', '.jpeg', '.JPG', '.JPEG',
+            '.png', '.PNG',
+            '.bmp', '.BMP',
+            '.tif', '.tiff', '.TIF', '.TIFF',
+            '.webp', '.WEBP'
+        ]
+        
         image_files = []
-        
-        for ext in image_extensions:
-            image_files.extend(folder_path.glob(f'*{ext}'))
-            image_files.extend(folder_path.glob(f'*{ext.upper()}'))
-        
-        # Also check subdirectories
-        for subdir in folder_path.iterdir():
-            if subdir.is_dir():
-                for ext in image_extensions:
-                    image_files.extend(subdir.glob(f'*{ext}'))
-                    image_files.extend(subdir.glob(f'*{ext.upper()}'))
+        for ext in extensions:
+            image_files.extend(self.input_folder.rglob(f'*{ext}'))
         
         return sorted(image_files)
     
-    def _generate_summary(self, results, output_path, total_detections, total_time):
-        """Generate summary report."""
-        if not results:
-            return
+    def get_file_size_mb(self, file_path):
+        """Get file size in megabytes."""
+        return os.path.getsize(file_path) / (1024 * 1024)
+    
+    def calculate_target_size(self, width, height, target_mb=1.0):
+        """
+        Calculate new dimensions to achieve target file size.
+        Based on average JPEG compression ratios.
+        """
+        # Approximate bytes per pixel for JPEG at given quality
+        # Lower quality = fewer bytes per pixel
+        if self.quality >= 90:
+            bytes_per_pixel = 2.5
+        elif self.quality >= 80:
+            bytes_per_pixel = 1.8
+        elif self.quality >= 70:
+            bytes_per_pixel = 1.2
+        else:
+            bytes_per_pixel = 0.8
         
-        # Calculate statistics
-        num_images = len(results)
-        avg_detections = total_detections / num_images if num_images > 0 else 0
-        avg_time = total_time / num_images if num_images > 0 else 0
+        # Current pixel count
+        current_pixels = width * height
         
-        # Extract all confidences
-        all_confidences = []
-        for res in results:
-            all_confidences.extend(res['confidences'])
+        # Target bytes
+        target_bytes = target_mb * 1024 * 1024
         
-        # Create summary dictionary
-        summary = {
-            'timestamp': datetime.now().isoformat(),
-            'total_images': num_images,
-            'total_detections': total_detections,
-            'average_detections_per_image': round(avg_detections, 2),
-            'total_inference_time_seconds': round(total_time, 2),
-            'average_inference_time_seconds': round(avg_time, 2),
-            'images_per_second': round(num_images / total_time, 2) if total_time > 0 else 0,
-            'confidence_statistics': {
-                'min': round(min(all_confidences), 3) if all_confidences else 0,
-                'max': round(max(all_confidences), 3) if all_confidences else 0,
-                'mean': round(np.mean(all_confidences), 3) if all_confidences else 0,
-                'median': round(np.median(all_confidences), 3) if all_confidences else 0
-            },
-            'detection_distribution': self._get_detection_distribution(results),
-            'images_with_no_detections': len([r for r in results if r['detections'] == 0])
+        # Calculate target pixels
+        target_pixels = target_bytes / bytes_per_pixel
+        
+        if target_pixels >= current_pixels:
+            # Already under target, no need to resize
+            return width, height
+        
+        # Calculate scaling factor
+        scale = np.sqrt(target_pixels / current_pixels)
+        
+        # New dimensions
+        new_width = int(width * scale)
+        new_height = int(height * scale)
+        
+        # Ensure minimum dimensions
+        new_width = max(new_width, 100)
+        new_height = max(new_height, 100)
+        
+        return new_width, new_height
+    
+    def resize_image(self, img, width, height):
+        """Resize image maintaining aspect ratio."""
+        h, w = img.shape[:2]
+        
+        # Calculate scaling
+        scale_w = width / w
+        scale_h = height / h
+        scale = min(scale_w, scale_h)
+        
+        # New dimensions
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        
+        # Resize
+        resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        
+        return resized, new_w, new_h
+    
+    def optimize_single_image(self, img_path):
+        """
+        Process a single image:
+        1. Check file size
+        2. Resize if > max_size_mb
+        3. Save with appropriate quality
+        """
+        filename = img_path.name
+        file_ext = img_path.suffix.lower()
+        
+        print(f"\nProcessing: {filename}")
+        
+        try:
+            # Get original file size
+            orig_size_mb = self.get_file_size_mb(img_path)
+            print(f"  Original size: {orig_size_mb:.2f} MB")
+            
+            # Read image
+            img = cv2.imread(str(img_path))
+            if img is None:
+                print(f"  ❌ Cannot read image")
+                shutil.copy2(img_path, self.dirs['failed'] / filename)
+                return {'status': 'failed', 'reason': 'cannot_read', 'original_mb': orig_size_mb}
+            
+            h, w = img.shape[:2]
+            print(f"  Dimensions: {w}x{h} pixels")
+            
+            # Check if already under limit
+            if orig_size_mb <= self.max_size_mb and max(w, h) <= self.max_dimension:
+                print(f"  ✓ Already under limits")
+                shutil.copy2(img_path, self.dirs['ok'] / filename)
+                return {
+                    'status': 'ok',
+                    'original_mb': orig_size_mb,
+                    'final_mb': orig_size_mb,
+                    'dimensions': f"{w}x{h}",
+                    'action': 'copied'
+                }
+            
+            # Determine target dimensions
+            if orig_size_mb > self.max_size_mb:
+                # Calculate dimensions to achieve target file size
+                target_w, target_h = self.calculate_target_size(w, h, self.max_size_mb)
+                print(f"  Target for {self.max_size_mb}MB: {target_w}x{target_h}")
+            else:
+                # Just limit dimensions
+                target_w, target_h = self.max_dimension, self.max_dimension
+            
+            # Apply dimension limits
+            target_w = min(target_w, self.max_dimension)
+            target_h = min(target_h, self.max_dimension)
+            
+            # Resize if needed
+            if w > target_w or h > target_h:
+                img_resized, new_w, new_h = self.resize_image(img, target_w, target_h)
+                print(f"  Resized to: {new_w}x{new_h}")
+                img_to_save = img_resized
+            else:
+                img_to_save = img
+                new_w, new_h = w, h
+            
+            # Save with appropriate settings
+            output_path = self.dirs['resized'] / filename
+            
+            if file_ext in ['.jpg', '.jpeg', '.JPG', '.JPEG']:
+                # JPEG - use quality parameter
+                cv2.imwrite(str(output_path), img_to_save, [cv2.IMWRITE_JPEG_QUALITY, self.quality])
+            elif file_ext in ['.png', '.PNG']:
+                # PNG - compression level 3 (balanced)
+                cv2.imwrite(str(output_path), img_to_save, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+            else:
+                # Other formats - save as is
+                cv2.imwrite(str(output_path), img_to_save)
+            
+            # Check final file size
+            final_size_mb = self.get_file_size_mb(output_path)
+            reduction = ((orig_size_mb - final_size_mb) / orig_size_mb) * 100
+            
+            print(f"  Final size: {final_size_mb:.2f} MB ({reduction:.1f}% reduction)")
+            
+            if final_size_mb > self.max_size_mb:
+                print(f"  ⚠ Still exceeds {self.max_size_mb}MB limit!")
+                exceeds_path = self.dirs['exceeds_limit'] / filename
+                shutil.move(output_path, exceeds_path)
+                
+                return {
+                    'status': 'exceeds_limit',
+                    'original_mb': orig_size_mb,
+                    'final_mb': final_size_mb,
+                    'dimensions': f"{new_w}x{new_h}",
+                    'action': 'resized_still_large'
+                }
+            
+            return {
+                'status': 'resized',
+                'original_mb': orig_size_mb,
+                'final_mb': final_size_mb,
+                'dimensions': f"{new_w}x{new_h}",
+                'action': 'resized',
+                'reduction_percent': reduction
+            }
+            
+        except Exception as e:
+            print(f"  ❌ Error: {e}")
+            try:
+                shutil.copy2(img_path, self.dirs['failed'] / filename)
+            except:
+                pass
+            return {'status': 'failed', 'reason': str(e), 'original_mb': orig_size_mb}
+    
+    def run_optimization(self):
+        """Run optimization on all images."""
+        image_files = self.get_all_images()
+        
+        if not image_files:
+            print(f"\n❌ No images found in {self.input_folder}")
+            return None
+        
+        print(f"\nFound {len(image_files)} image(s)")
+        print("Starting optimization...\n")
+        
+        # Statistics
+        stats = {
+            'total': len(image_files),
+            'ok': 0,
+            'resized': 0,
+            'exceeds_limit': 0,
+            'failed': 0,
+            'skipped': 0,
+            'total_original_mb': 0,
+            'total_final_mb': 0
         }
         
-        # Save summary as JSON
-        summary_path = output_path / "summary.json"
-        with open(summary_path, 'w') as f:
-            json.dump(summary, f, indent=2)
+        results = []
         
-        # Print summary
-        print(f"\n{'='*60}")
-        print("BATCH TESTING SUMMARY")
-        print(f"{'='*60}")
-        print(f"Images processed: {summary['total_images']}")
-        print(f"Total eggplants detected: {summary['total_detections']}")
-        print(f"Average per image: {summary['average_detections_per_image']:.1f}")
-        print(f"Total time: {summary['total_inference_time_seconds']:.1f}s")
-        print(f"Average time per image: {summary['average_inference_time_seconds']:.2f}s")
-        print(f"Speed: {summary['images_per_second']:.1f} images/second")
-        print(f"Images with no detections: {summary['images_with_no_detections']}")
+        for i, img_file in enumerate(image_files, 1):
+            print(f"[{i}/{len(image_files)}] ", end='')
+            result = self.optimize_single_image(img_file)
+            
+            # Update statistics
+            stats[result['status']] += 1
+            if 'original_mb' in result:
+                stats['total_original_mb'] += result['original_mb']
+            if 'final_mb' in result:
+                stats['total_final_mb'] += result['final_mb']
+            
+            results.append({
+                'file': img_file.name,
+                **result
+            })
         
-        if all_confidences:
-            print(f"\nConfidence Statistics:")
-            print(f"  Min: {summary['confidence_statistics']['min']:.3f}")
-            print(f"  Max: {summary['confidence_statistics']['max']:.3f}")
-            print(f"  Mean: {summary['confidence_statistics']['mean']:.3f}")
-            print(f"  Median: {summary['confidence_statistics']['median']:.3f}")
+        # Generate summary
+        self.generate_summary(stats, results)
         
-        print(f"\nDetection distribution:")
-        for detections, count in summary['detection_distribution'].items():
-            percentage = (count / num_images) * 100
-            print(f"  {detections} eggplants: {count} images ({percentage:.1f}%)")
-        
-        print(f"\nDetailed results saved to: {output_path}")
-        print(f"Summary saved to: {summary_path}")
-        print(f"{'='*60}")
+        return results
     
-    def _get_detection_distribution(self, results):
-        """Count how many images have 0, 1, 2, etc. detections."""
-        distribution = {}
-        for res in results:
-            detections = res['detections']
-            distribution[detections] = distribution.get(detections, 0) + 1
+    def generate_summary(self, stats, results):
+        """Generate and display summary report."""
+        print(f"\n{'='*70}")
+        print("OPTIMIZATION SUMMARY")
+        print(f"{'='*70}")
         
-        # Sort by number of detections
-        return dict(sorted(distribution.items()))
+        print(f"\n📊 Statistics:")
+        print(f"  Total images: {stats['total']}")
+        print(f"  Already under {self.max_size_mb}MB: {stats['ok']}")
+        print(f"  Successfully resized: {stats['resized']}")
+        print(f"  Still exceeds limit: {stats['exceeds_limit']}")
+        print(f"  Failed to process: {stats['failed']}")
+        
+        if stats['total'] > 0:
+            total_savings_mb = stats['total_original_mb'] - stats['total_final_mb']
+            total_savings_percent = (total_savings_mb / stats['total_original_mb']) * 100 if stats['total_original_mb'] > 0 else 0
+            
+            print(f"\n💾 Size reduction:")
+            print(f"  Original total: {stats['total_original_mb']:.2f} MB")
+            print(f"  Final total: {stats['total_final_mb']:.2f} MB")
+            print(f"  Total savings: {total_savings_mb:.2f} MB ({total_savings_percent:.1f}%)")
+            print(f"  Average per image: {stats['total_original_mb']/stats['total']:.2f} MB → {stats['total_final_mb']/stats['total']:.2f} MB")
+        
+        print(f"\n📁 Output structure:")
+        for category, dir_path in self.dirs.items():
+            num_files = len(list(dir_path.glob('*')))
+            if num_files > 0:
+                size_mb = sum(os.path.getsize(f) for f in dir_path.glob('*')) / (1024 * 1024)
+                print(f"  {dir_path.name}/ - {num_files} files ({size_mb:.1f} MB)")
+        
+        # List files that still exceed limit
+        if stats['exceeds_limit'] > 0:
+            print(f"\n⚠ Files still exceeding {self.max_size_mb}MB (need manual attention):")
+            exceed_files = [r for r in results if r['status'] == 'exceeds_limit']
+            for r in exceed_files[:10]:  # Show first 10
+                print(f"  {r['file']}: {r['final_mb']:.2f} MB")
+            if len(exceed_files) > 10:
+                print(f"  ... and {len(exceed_files) - 10} more")
+        
+        # Save detailed report
+        report_path = self.output_folder / "optimization_report.txt"
+        with open(report_path, 'w') as f:
+            f.write(f"Image Optimization Report\n")
+            f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Input folder: {self.input_folder}\n")
+            f.write(f"Max file size: {self.max_size_mb} MB\n")
+            f.write(f"Max dimension: {self.max_dimension} px\n")
+            f.write(f"JPEG quality: {self.quality}\n\n")
+            
+            f.write("SUMMARY\n")
+            f.write(f"Total images: {stats['total']}\n")
+            f.write(f"Already under limit: {stats['ok']}\n")
+            f.write(f"Successfully resized: {stats['resized']}\n")
+            f.write(f"Still exceeds limit: {stats['exceeds_limit']}\n")
+            f.write(f"Failed: {stats['failed']}\n\n")
+            
+            f.write("DETAILED RESULTS\n")
+            for r in results:
+                f.write(f"{r['file']}: {r.get('original_mb', 0):.2f}MB → {r.get('final_mb', 0):.2f}MB, Status: {r['status']}\n")
+        
+        print(f"\n📄 Detailed report saved to: {report_path}")
+        print(f"\n✅ Optimization complete!")
+        print(f"Optimized images ready in: {self.output_folder}")
+        print(f"{'='*70}")
 
 def main():
-    # Configuration
-    MODEL_PATH = "/home/saib/ml_project/notebooks/yolo_dataset_split/yolov8m-seg-custom.pt"  # Your trained model
-    TEST_FOLDER = "/home/saib/ml_project/data/auto annotation/input"  # Folder containing test images
-    OUTPUT_FOLDER = "/home/saib/ml_project/data/auto annotation/output"  # Optional: specify output folder
-    CONFIDENCE_THRESHOLD = 0.5  # Adjust as needed
+    """Main function with your specific paths."""
+    # ============= CONFIGURATION =============
+    INPUT_FOLDER = "/home/saib/ml_project/data/manual annotation/input"
+    OUTPUT_FOLDER = None  # Auto-generated with timestamp
+    MAX_SIZE_MB = 1.0     # Maximum 1MB per file
+    MAX_DIMENSION = 1600  # Maximum 1600px width/height
+    QUALITY = 85          # JPEG quality (1-100)
+    # ========================================
     
-    # Create tester
-    tester = BatchEggplantTester(MODEL_PATH)
+    print("Starting image size optimization...")
     
-    # Run batch test
-    results = tester.test_folder(
-        input_folder=TEST_FOLDER,
+    # Check if input folder exists
+    if not os.path.exists(INPUT_FOLDER):
+        print(f"❌ Input folder not found: {INPUT_FOLDER}")
+        return
+    
+    # Initialize optimizer
+    optimizer = ImageSizeOptimizer(
+        input_folder=INPUT_FOLDER,
         output_folder=OUTPUT_FOLDER,
-        conf_threshold=CONFIDENCE_THRESHOLD
+        max_size_mb=MAX_SIZE_MB,
+        max_dimension=MAX_DIMENSION,
+        quality=QUALITY
     )
+    
+    # Run optimization
+    results = optimizer.run_optimization()
+    
+    if results:
+        print(f"\n🎯 Next steps:")
+        print(f"1. Use the 'ok/' folder for images already under {MAX_SIZE_MB}MB")
+        print(f"2. Use the 'resized/' folder for optimized images")
+        print(f"3. Check 'exceeds_limit/' for files that need manual attention")
+        print(f"4. Run your YOLO batch testing on the optimized images")
 
 if __name__ == "__main__":
     main()
