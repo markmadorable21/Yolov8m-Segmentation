@@ -24,6 +24,20 @@
 Zone.Identifier
 *.Zone.Identifier
 *.txt
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.webp
+*.ico
 
 
 # Web and vector formats
@@ -84,6 +98,12 @@ datasets/
 
 # ML/DL specific
 data/
+runs/
+exp/
+results/
+output/
+outputs/
+predictions/
 
 # Output folders
 output/
