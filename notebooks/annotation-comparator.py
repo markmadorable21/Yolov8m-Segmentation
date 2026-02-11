@@ -158,43 +158,6 @@ class AnnotationComparator:
                 stats['missing_originals'].append(annotated_img.name)
                 print(f"  ✗ No original found for: {annotated_img.name}")
         
-        # Method 2: Also check for images with labels but no annotations
-        if yolo_labels and len(yolo_labels) > stats['images_copied']:
-            print(f"\nMethod 2: Checking for images with labels but no annotations")
-            
-            for label_file in yolo_labels:
-                base_name = label_file.stem
-                
-                # Check if we already copied this image
-                already_copied = False
-                for ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp']:
-                    test_file = self.output_folder / f"{base_name}{ext}"
-                    if test_file.exists():
-                        already_copied = True
-                        break
-                
-                if not already_copied:
-                    # Find corresponding original image
-                    for original_img in original_images:
-                        if original_img.stem == base_name:
-                            # Check if annotated version exists
-                            annotated_exists = any(
-                                ann_img.stem == base_name for ann_img in annotated_images
-                            )
-                            
-                            # Copy original image
-                            output_path = self.output_folder / original_img.name
-                            shutil.copy2(original_img, output_path)
-                            stats['images_copied'] += 1
-                            
-                            if not annotated_exists:
-                                stats['images_with_labels_only'] += 1
-                                print(f"  ✓ Copied: {original_img.name} (has label only)")
-                            else:
-                                # This shouldn't happen if method 1 worked correctly
-                                stats['images_with_both'] += 1
-                                print(f"  ✓ Copied: {original_img.name} (has both)")
-                            break
         
         # Generate summary
         self.generate_summary(stats)
@@ -367,7 +330,7 @@ def main():
     CONFIG = {
         'original_input_folder': "/home/saib/ml_project/data/downsample-segment/input",
         'annotated_output_folder': "/home/saib/ml_project/data/downsample-segment/final_output/annotated_images",
-        'output_folder': "/home/saib/ml_project/data/downsample-segment/matched_originals",
+        'output_folder': "/home/saib/ml_project/data/downsample-segment/second_yolo_train_final_images",
         'create_yolo_dataset': True,  # Set to False if you only want to copy images
         'train_ratio': 0.8,
         'val_ratio': 0.1,

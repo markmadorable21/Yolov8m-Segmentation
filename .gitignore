@@ -23,6 +23,7 @@
 *.m4a
 Zone.Identifier
 *.Zone.Identifier
+*.txt
 
 
 # Web and vector formats
