@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 import shutil
-import json
+import json 
 import time
 from datetime import datetime
 import glob
@@ -939,13 +939,13 @@ def main():
     """Main function with configuration."""
     # ============= CONFIGURATION =============
     CONFIG = {
-        'input_folder': "/home/saib/ml_project/data/downsample-segment/input",
-        'downsampled_folder': "/home/saib/ml_project/data/downsample-segment/downsample",
-        'final_output_folder': "/home/saib/ml_project/data/downsample-segment/final_output",
-        'model_path': "/home/saib/ml_project/notebooks/yolo_dataset_split/yolov8m-seg-custom.pt",
+        'input_folder': "/home/saib/ml_project/data/batch_testing/input",
+        'downsampled_folder': "/home/saib/ml_project/data/batch_testing/downsample",
+        'final_output_folder': "/home/saib/ml_project/data/batch_testing/output",
+        'model_path': "/home/saib/ml_project/data/batch_testing/best.pt",
         'max_size_mb': 1.0,
         'max_dimension': 1600,
-        'quality': 85,
+        'quality': 90,
         'confidence_threshold': 0.5,
         'cleanup_empty_annotations': True  # Add this option
     }
