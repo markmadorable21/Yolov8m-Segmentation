@@ -934,7 +934,6 @@ class IntegratedPipeline:
         print(f"  └── segmented_eggplants/")
         print(f"\n✅ Pipeline executed successfully!")
 
-
 def main():
     """Main function with configuration."""
     # ============= CONFIGURATION =============
@@ -954,7 +953,6 @@ def main():
     # Create pipeline and run
     pipeline = IntegratedPipeline()
     pipeline.run_pipeline(CONFIG)
-
 
 if __name__ == "__main__":
     main()
